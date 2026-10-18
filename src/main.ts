@@ -160,19 +160,37 @@ class MainProcess {
       });
       ipcMain.handle('set-hud-click-through', (_event, enabled) => {
         if (this.mainWindow) {
-          this.mainWindow.setIgnoreMouseEvents(!!enabled);
+          this.mainWindow.setIgnoreMouseEvents(!!enabled, enabled ? { forward: true } : undefined);
         }
+      });
+      ipcMain.handle('get-hud-settings', () => {
+        return this.settingsStore.get('hudSettings') ?? null;
       });
       // Listen for HUD settings updates (placement, etc)
       ipcMain.on('hud-settings-update', (_event, settings) => {
         console.log('[IPC] hud-settings-update received:', settings);
-        this.updateHudPlacement(settings?.placement);
-        if (this.mainWindow && typeof settings?.alwaysOnTop === 'boolean') {
-          this.mainWindow.setAlwaysOnTop(!!settings.alwaysOnTop);
-          this.settingsStore.set('hudSettings', settings);
-          // Forward settings to HUD window
-          this.mainWindow.webContents.send('hud-settings-update', settings);
+        if (!settings || typeof settings !== 'object') return;
+        this.settingsStore.set('hudSettings', settings);
+        if (!this.mainWindow) return;
+        if (typeof settings.width === 'number' && typeof settings.height === 'number') {
+          this.mainWindow.setSize(
+            Math.max(120, Math.round(settings.width)),
+            Math.max(48, Math.round(settings.height))
+          );
         }
+        if (typeof settings.alwaysOnTop === 'boolean') {
+          this.mainWindow.setAlwaysOnTop(settings.alwaysOnTop);
+        }
+        if (typeof settings.clickThrough === 'boolean') {
+          this.mainWindow.setIgnoreMouseEvents(
+            settings.clickThrough,
+            settings.clickThrough ? { forward: true } : undefined
+          );
+        }
+        if (typeof settings.placement === 'string') {
+          this.updateHudPlacement(settings.placement);
+        }
+        this.mainWindow.webContents.send('hud-settings-update', settings);
       });
       ipcMain.on('test-event', (_event, data) => {
         console.log('[IPC] test-event received:', data);
@@ -344,17 +362,21 @@ class MainProcess {
     try {
       console.log('[DEBUG] createWindow called');
       const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-      const savedPlacement = this.settingsStore.get('hudPlacement') ?? 'top-right';
       const hudSettings = this.settingsStore.get('hudSettings') ?? { alwaysOnTop: true };
+      const savedPlacement = (typeof hudSettings.placement === 'string' && hudSettings.placement)
+        ? hudSettings.placement
+        : (this.settingsStore.get('hudPlacement') ?? 'top-right');
       const appIconPath = this.getAppIconPathAndLog();
+      const hudWidth = typeof hudSettings.width === 'number' ? Math.round(hudSettings.width) : 320;
+      const hudHeight = typeof hudSettings.height === 'number' ? Math.round(hudSettings.height) : 100;
       this.mainWindow = new BrowserWindow({
-        width: 320,
-        height: 100,
-        x: width - 340,
+        width: hudWidth,
+        height: hudHeight,
+        x: width - hudWidth - 20,
         y: 0,
         frame: false,
         transparent: true,
-        alwaysOnTop: !!hudSettings.alwaysOnTop,
+        alwaysOnTop: hudSettings.alwaysOnTop !== false,
         icon: appIconPath,
         webPreferences: {
           nodeIntegration: true,
@@ -366,13 +388,19 @@ class MainProcess {
         app.dock.setIcon(appIconPath);
       }
       this.mainWindow.loadFile(path.join(__dirname, 'renderer/index.html'));
-      this.mainWindow.setIgnoreMouseEvents(true, { forward: true });
+      const clickThrough = hudSettings.clickThrough !== false;
+      this.mainWindow.setIgnoreMouseEvents(clickThrough, clickThrough ? { forward: true } : undefined);
       this.mainWindow.webContents.on('context-menu', (_event, params) => {
         this.mainWindow!.setIgnoreMouseEvents(false);
         const menu = Menu.buildFromTemplate(this.buildMenuTemplate());
         menu.popup({ window: this.mainWindow! });
         menu.once('menu-will-close', () => {
-          this.mainWindow!.setIgnoreMouseEvents(true);
+          const current = this.settingsStore.get('hudSettings');
+          const restoreClickThrough = !current || current.clickThrough !== false;
+          this.mainWindow!.setIgnoreMouseEvents(
+            restoreClickThrough,
+            restoreClickThrough ? { forward: true } : undefined
+          );
         });
       });
       this.mainWindow.once('ready-to-show', () => {
