@@ -7,20 +7,44 @@ import {
   restoreArchivedTask,
   deleteArchivedTask,
   getTaskLists,
-  getActiveTaskListId,
-  setActiveTaskList,
   createTaskList,
   renameTaskList,
   deleteTaskList,
 } from '../local';
 import { LocalTask } from '../../../shared/types/task';
 
-// Mock electron-store
-jest.mock('electron-store');
+// In-memory stand-in for electron-store. The real module persists get/set;
+// a bare automock returns undefined and makes every list lookup throw.
+const mockMemory: Record<string, unknown> = {};
+
+jest.mock('electron-store', () => {
+  return jest.fn().mockImplementation(() => ({
+    get: (key: string) => mockMemory[key],
+    set: (key: string, value: unknown) => {
+      mockMemory[key] = value;
+    },
+    delete: (key: string) => {
+      delete mockMemory[key];
+    },
+    clear: () => {
+      Object.keys(mockMemory).forEach((key) => delete mockMemory[key]);
+    },
+  }));
+});
+
+function sampleTask(title = 'Test Task') {
+  return {
+    title,
+    description: 'Test Description',
+    start: new Date().toISOString(),
+    end: new Date(Date.now() + 3600000).toISOString(),
+    repeat: 'daily' as const,
+  };
+}
 
 describe('Local Task Management', () => {
   beforeEach(() => {
-    // Clear all mocks before each test
+    Object.keys(mockMemory).forEach((key) => delete mockMemory[key]);
     jest.clearAllMocks();
   });
 
@@ -38,30 +62,25 @@ describe('Local Task Management', () => {
     });
 
     it('should rename a task list', () => {
-      const listId = 'test-id';
-      const newName = 'New List Name';
-      renameTaskList(listId, newName);
-      // Verify the store was called with the correct parameters
-      expect(require('electron-store')).toHaveBeenCalled();
+      const created = createTaskList('Test List');
+      renameTaskList(created.id, 'New List Name');
+      expect(getTaskLists()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: created.id, name: 'New List Name' }),
+        ])
+      );
     });
 
     it('should delete a task list', () => {
-      const listId = 'test-id';
-      deleteTaskList(listId);
-      // Verify the store was called with the correct parameters
-      expect(require('electron-store')).toHaveBeenCalled();
+      const created = createTaskList('Test List');
+      deleteTaskList(created.id);
+      expect(getTaskLists().some((list) => list.id === created.id)).toBe(false);
     });
   });
 
   describe('Tasks', () => {
     it('should add a new task', () => {
-      const task = {
-        title: 'Test Task',
-        description: 'Test Description',
-        start: new Date().toISOString(),
-        end: new Date(Date.now() + 3600000).toISOString(), // 1 hour later
-        repeat: 'daily' as const,
-      };
+      const task = sampleTask();
       const result = addLocalTask(task);
       expect(result).toHaveProperty('id');
       expect(result).toHaveProperty('title', task.title);
@@ -73,46 +92,46 @@ describe('Local Task Management', () => {
     });
 
     it('should update a task', () => {
-      const taskId = 'test-id';
-      const task: LocalTask = {
-        id: taskId,
+      const created = addLocalTask(sampleTask());
+      const updated: LocalTask = {
+        ...created,
         title: 'Updated Task',
         description: 'Updated Description',
-        start: new Date().toISOString(),
-        end: new Date(Date.now() + 3600000).toISOString(),
-        completed: false,
       };
-      updateLocalTask(task);
-      // Verify the store was called with the correct parameters
-      expect(require('electron-store')).toHaveBeenCalled();
+      updateLocalTask(updated);
+      expect(getLocalTasks().find((task) => task.id === created.id)?.title).toBe('Updated Task');
     });
 
     it('should delete a task', () => {
-      const taskId = 'test-id';
-      deleteLocalTask(taskId);
-      // Verify the store was called with the correct parameters
-      expect(require('electron-store')).toHaveBeenCalled();
+      const created = addLocalTask(sampleTask());
+      deleteLocalTask(created.id);
+      expect(getLocalTasks().some((task) => task.id === created.id)).toBe(false);
     });
   });
 
   describe('Archived Tasks', () => {
     it('should get archived tasks', () => {
+      const created = addLocalTask(sampleTask());
+      updateLocalTask({ ...created, archived: true });
       const archivedTasks = getArchivedTasks();
       expect(Array.isArray(archivedTasks)).toBe(true);
+      expect(archivedTasks.some((task) => task.id === created.id)).toBe(true);
     });
 
     it('should restore an archived task', () => {
-      const taskId = 'test-id';
-      restoreArchivedTask(taskId);
-      // Verify the store was called with the correct parameters
-      expect(require('electron-store')).toHaveBeenCalled();
+      const created = addLocalTask(sampleTask());
+      updateLocalTask({ ...created, archived: true });
+      restoreArchivedTask(created.id);
+      expect(getArchivedTasks().some((task) => task.id === created.id)).toBe(false);
+      expect(getLocalTasks().some((task) => task.id === created.id)).toBe(true);
     });
 
     it('should delete an archived task', () => {
-      const taskId = 'test-id';
-      deleteArchivedTask(taskId);
-      // Verify the store was called with the correct parameters
-      expect(require('electron-store')).toHaveBeenCalled();
+      const created = addLocalTask(sampleTask());
+      updateLocalTask({ ...created, archived: true });
+      deleteArchivedTask(created.id);
+      expect(getArchivedTasks().some((task) => task.id === created.id)).toBe(false);
+      expect(getLocalTasks().some((task) => task.id === created.id)).toBe(false);
     });
   });
-}); 
+});
