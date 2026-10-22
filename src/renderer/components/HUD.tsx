@@ -50,6 +50,21 @@ const HUD: React.FC = () => {
   const [fontSize, setFontSize] = useState(18);
   const [padding, setPadding] = useState(12);
   const [opacity, setOpacity] = useState(0.85);
+  const [hudSettingsLoaded, setHudSettingsLoaded] = useState(false);
+
+  const applyHudSettings = (settings: any) => {
+    if (!settings || typeof settings !== 'object') return;
+    if (settings.opacity !== undefined) setOpacity(settings.opacity);
+    if (settings.showBorder !== undefined) setShowBorder(settings.showBorder);
+    if (settings.borderColors) setBorderColors(settings.borderColors);
+    if (settings.dynamicBorderColor !== undefined) setDynamicBorderColor(settings.dynamicBorderColor);
+    if (settings.showCurrentTime !== undefined) setShowCurrentTime(settings.showCurrentTime);
+    if (settings.width !== undefined) setWidth(settings.width);
+    if (settings.height !== undefined) setHeight(settings.height);
+    if (settings.fontSize !== undefined) setFontSize(settings.fontSize);
+    if (settings.padding !== undefined) setPadding(settings.padding);
+    if (typeof settings.clickThrough === 'boolean') setClickThrough(settings.clickThrough);
+  };
 
   // Helper function to interpolate between two colors
   const interpolateColor = (color1: string, color2: string, factor: number) => {
@@ -120,37 +135,31 @@ const HUD: React.FC = () => {
     setBorderColor(calculateBorderColor(timeLeft));
   }, [timeLeft, dynamicBorderColor, borderColors]);
 
-  // Load HUD settings from localStorage on mount
+  // Load HUD settings from electron-store (main process) so they survive restarts.
+  // The options window and this window do not share localStorage.
   useEffect(() => {
-    const savedSettings = localStorage.getItem('hudSettings');
-    if (savedSettings) {
-      const settings = JSON.parse(savedSettings);
-      if (settings.opacity !== undefined) setOpacity(settings.opacity);
-      if (settings.showBorder !== undefined) setShowBorder(settings.showBorder);
-      if (settings.borderColors) setBorderColors(settings.borderColors);
-      if (settings.dynamicBorderColor !== undefined) setDynamicBorderColor(settings.dynamicBorderColor);
-      if (settings.showCurrentTime !== undefined) setShowCurrentTime(settings.showCurrentTime);
-      if (settings.width !== undefined) setWidth(settings.width);
-      if (settings.height !== undefined) setHeight(settings.height);
-      if (settings.fontSize !== undefined) setFontSize(settings.fontSize);
-      if (settings.padding !== undefined) setPadding(settings.padding);
+    if (!ipcRenderer) {
+      setHudSettingsLoaded(true);
+      return;
     }
-  }, []);
+    let cancelled = false;
+    ipcRenderer.invoke('get-hud-settings').then((settings: any) => {
+      if (cancelled) return;
+      applyHudSettings(settings);
+    }).catch((err: any) => {
+      console.error('Failed to load HUD settings:', err);
+    }).finally(() => {
+      if (!cancelled) setHudSettingsLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [ipcRenderer]);
 
   // Listen for HUD settings updates
   useEffect(() => {
     if (!ipcRenderer) return;
 
     const handleHudSettingsUpdate = (_event: IpcRendererEvent, settings: any) => {
-      if (settings.opacity !== undefined) setOpacity(settings.opacity);
-      if (settings.showBorder !== undefined) setShowBorder(settings.showBorder);
-      if (settings.borderColors) setBorderColors(settings.borderColors);
-      if (settings.dynamicBorderColor !== undefined) setDynamicBorderColor(settings.dynamicBorderColor);
-      if (settings.showCurrentTime !== undefined) setShowCurrentTime(settings.showCurrentTime);
-      if (settings.width !== undefined) setWidth(settings.width);
-      if (settings.height !== undefined) setHeight(settings.height);
-      if (settings.fontSize !== undefined) setFontSize(settings.fontSize);
-      if (settings.padding !== undefined) setPadding(settings.padding);
+      applyHudSettings(settings);
     };
 
     ipcRenderer.on('hud-settings-update', handleHudSettingsUpdate);
@@ -391,33 +400,32 @@ const HUD: React.FC = () => {
     };
   }, [menuOpen]);
 
-  // Handle click-through state with IPC
+  // Handle click-through state with IPC. Wait until stored settings load so the
+  // default `true` does not clobber a persisted `false` on startup.
   useEffect(() => {
-    if (ipcRenderer) {
+    if (!hudSettingsLoaded || !ipcRenderer) return;
+    ipcRenderer.invoke('set-hud-click-through', clickThrough).catch((err: any) => {
+      // Ignore missing handler errors in dev
+      if (err && err.message && err.message.includes('No handler registered')) return;
+      console.error('set-hud-click-through error:', err);
+    });
+  }, [clickThrough, ipcRenderer, hudSettingsLoaded]);
+
+  // Make hamburger always clickable: disable click-through when menu is open or button is hovered
+  useEffect(() => {
+    if (!hudSettingsLoaded || !ipcRenderer) return;
+    if (menuOpen) {
+      ipcRenderer.invoke('set-hud-click-through', false).catch((err: any) => {
+        if (err && err.message && err.message.includes('No handler registered')) return;
+        console.error('set-hud-click-through error:', err);
+      });
+    } else {
       ipcRenderer.invoke('set-hud-click-through', clickThrough).catch((err: any) => {
-        // Ignore missing handler errors in dev
         if (err && err.message && err.message.includes('No handler registered')) return;
         console.error('set-hud-click-through error:', err);
       });
     }
-  }, [clickThrough, ipcRenderer]);
-
-  // Make hamburger always clickable: disable click-through when menu is open or button is hovered
-  useEffect(() => {
-    if (ipcRenderer) {
-      if (menuOpen) {
-        ipcRenderer.invoke('set-hud-click-through', false).catch((err: any) => {
-          if (err && err.message && err.message.includes('No handler registered')) return;
-          console.error('set-hud-click-through error:', err);
-        });
-      } else {
-        ipcRenderer.invoke('set-hud-click-through', clickThrough).catch((err: any) => {
-          if (err && err.message && err.message.includes('No handler registered')) return;
-          console.error('set-hud-click-through error:', err);
-        });
-      }
-    }
-  }, [menuOpen, clickThrough, ipcRenderer]);
+  }, [menuOpen, clickThrough, ipcRenderer, hudSettingsLoaded]);
 
   const formatTime = (ms: number | null) => {
     if (ms === null || ms <= 0) return '00:00';

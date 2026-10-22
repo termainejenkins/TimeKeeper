@@ -19,6 +19,8 @@ out/
 *.tsbuildinfo
 # TypeScript declaration files that are generated
 *.d.ts
+# Hand-written ambient types under src/ stay in version control
+!src/**/*.d.ts
 
 # Debug logs
 # These files contain debugging information and error logs that are specific
@@ -65,13 +67,17 @@ coverage/
 *.temp
 .cache/
 
-# Large binary files
+# Large binary files and packaged installers
 *.exe
 *.dll
 *.so
 *.dylib
 *.bin
 *.dat
+*.dmg
+*.AppImage
+*.snap
+*.blockmap
 
 # Application specific
 app.asar

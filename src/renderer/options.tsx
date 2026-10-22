@@ -61,14 +61,6 @@ function setViewMode(mode: string) {
 
 type HudSettings = typeof defaultHudSettings;
 
-const getHudSettings = () => {
-  try {
-    const raw = localStorage.getItem('hudSettings');
-    if (raw) return { ...defaultHudSettings, ...JSON.parse(raw) };
-  } catch {}
-  return { ...defaultHudSettings };
-};
-
 const saveHudSettings = (settings: any) => {
   localStorage.setItem('hudSettings', JSON.stringify(settings));
   // Send to HUD window
@@ -100,8 +92,9 @@ const App: React.FC = () => {
     if (fetchTasksRef.current) fetchTasksRef.current();
   }, []);
 
-  // HUD options state
-  const [hudSettings, setHudSettings] = useState<HudSettings>(getHudSettings());
+  // HUD options state. electron-store (via IPC) is the source of truth across restarts.
+  const [hudSettings, setHudSettings] = useState<HudSettings>({ ...defaultHudSettings });
+  const [hudSettingsLoaded, setHudSettingsLoaded] = useState(false);
 
   // Updates state
   const [appVersion, setAppVersion] = useState('');
@@ -174,10 +167,43 @@ const App: React.FC = () => {
     if (ipc) ipc.invoke('delete-task-list', id).then(fetchTaskLists);
   };
 
-  // Apply instantly on change
+  // Load persisted HUD settings before the save effect runs, so defaults do not
+  // overwrite electron-store on startup.
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let next = { ...defaultHudSettings };
+      try {
+        if (ipc) {
+          const stored = await ipc.invoke('get-hud-settings');
+          if (stored && typeof stored === 'object') {
+            next = { ...defaultHudSettings, ...stored };
+          } else {
+            // One-time migration from this window's localStorage for installs
+            // that saved settings before electron-store was the source of truth.
+            try {
+              const raw = localStorage.getItem('hudSettings');
+              if (raw) next = { ...defaultHudSettings, ...JSON.parse(raw) };
+            } catch {
+              // Ignore malformed localStorage and keep defaults.
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load HUD settings:', error);
+      }
+      if (cancelled) return;
+      setHudSettings(next);
+      setHudSettingsLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [ipc]);
+
+  // Apply instantly on change, after the stored settings have been loaded.
+  useEffect(() => {
+    if (!hudSettingsLoaded) return;
     saveHudSettings(hudSettings);
-  }, [hudSettings]);
+  }, [hudSettings, hudSettingsLoaded]);
 
   // Set body and #root background to match app background
   useEffect(() => {

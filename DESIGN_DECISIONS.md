@@ -39,33 +39,33 @@ This document details the major design choices made in the development of the Ti
 
 **Decision:**
 - Local state is managed in React components using hooks (`useState`, `useEffect`).
-- HUD settings are stored in localStorage and synced via IPC.
+- HUD settings are stored with `electron-store` in the main process and synced to both windows via IPC.
 - Tasks are managed in the main process and accessed via IPC.
 
 **Rationale:**
 - React hooks provide simple, scalable state management for UI.
-- Using localStorage for HUD settings allows for instant UI updates and persistence.
+- Storing HUD settings in `electron-store` lets the HUD and options windows share one copy that survives restarts. The options window still mirrors the latest values to `localStorage`.
 - IPC ensures that tasks and settings are consistent across windows.
 
 **Alternatives Considered:**
 - Global state libraries (Redux, Zustand): not needed at current scale.
-- Shared store for settings (planned for future for cross-window sync).
+- A second copy of HUD settings that lives only in renderer `localStorage` (rejected for cross-window sync; `electron-store` is the shared copy).
 
 ---
 
 ## 4. Persistence
 
 **Decision:**
-- Use `electron-store` for persistent storage of tasks in the main process.
-- Use `localStorage` for HUD settings in the renderer.
+- Use `electron-store` for persistent storage of tasks and HUD settings in the main process.
+- Mirror the latest HUD settings into the options window `localStorage` as a fallback.
 
 **Rationale:**
 - `electron-store` is robust, simple, and works well for Electron apps.
-- `localStorage` is easy for per-window settings and rapid prototyping.
+- `electron-store` is shared by every window, so HUD appearance, click-through, and placement survive a restart. `localStorage` is not shared between the HUD and options windows.
 
 **Alternatives Considered:**
 - Using a database (SQLite, lowdb): overkill for current needs.
-- Migrating all settings to `electron-store` (planned for future).
+- Keeping HUD settings only in `localStorage` (rejected: the HUD and options windows do not share it, so settings did not survive a restart on the HUD).
 
 ---
 

@@ -26,7 +26,9 @@ describe('ScaledText', () => {
 
   it('handles empty content gracefully', () => {
     render(<ScaledText text="" fontSize={16} />);
-    expect(screen.getByText('')).toBeInTheDocument();
+    // An empty string matches every node with no text, including <body>.
+    // The span is the element ScaledText actually renders.
+    expect(screen.getByText('', { selector: 'span' })).toBeInTheDocument();
   });
 
   it('applies scale factor correctly', () => {
