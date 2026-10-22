@@ -1,6 +1,6 @@
 {
     "name":  "time-keeper",
-    "version":  "1.0.3",
+    "version":  "1.0.4",
     "description":  "A minimalist desktop HUD for tracking time and tasks",
     "main":  "dist/main.js",
     "build":  {
@@ -17,7 +17,7 @@
                   "win":  {
                               "target":  "nsis",
                               "icon":  "src/renderer/assets/icon.ico",
-                              "artifactName":  "${productName}-Setup-${version}.${ext}",
+                              "artifactName":  "TimeKeeper-Setup-${version}.${ext}",
                               "verifyUpdateCodeSignature":  false
                           },
                   "mac":  {
@@ -32,7 +32,8 @@
                                "oneClick":  false,
                                "allowToChangeInstallationDirectory":  true,
                                "createDesktopShortcut":  true,
-                               "createStartMenuShortcut":  true
+                               "createStartMenuShortcut":  true,
+                               "artifactName":  "TimeKeeper-Setup-${version}.${ext}"
                            },
                   "publish":  {
                                   "provider":  "github",

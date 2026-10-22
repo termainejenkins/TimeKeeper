@@ -300,7 +300,6 @@ class MainProcess {
         }
         return true;
       });
-      // TODO: Add system tray integration here
       endReady();
     }).catch(error => {
       console.error('[ERROR] App ready failed:', error);
@@ -323,9 +322,14 @@ class MainProcess {
   private getAppIconPathAndLog(): string | undefined {
     console.log('[DEBUG] getAppIconPathAndLog called');
     const fs = require('fs');
-    // Write to a debug file to confirm execution
+    // Write to the app log directory, not the process working directory.
     try {
-      fs.appendFileSync('app_icon_debug.log', `[${new Date().toISOString()}] getAppIconPathAndLog called\n`);
+      const logDir = app.getPath('logs');
+      fs.mkdirSync(logDir, { recursive: true });
+      fs.appendFileSync(
+        path.join(logDir, 'app_icon_debug.log'),
+        `[${new Date().toISOString()}] getAppIconPathAndLog called\n`
+      );
     } catch (e) {
       // ignore
     }
