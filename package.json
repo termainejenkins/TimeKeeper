@@ -33,7 +33,9 @@
                                "allowToChangeInstallationDirectory":  true,
                                "createDesktopShortcut":  true,
                                "createStartMenuShortcut":  true,
-                               "artifactName":  "TimeKeeper-Setup-${version}.${ext}"
+                               "artifactName":  "TimeKeeper-Setup-${version}.${ext}",
+                               "installerIcon":  "src/renderer/assets/icon.ico",
+                               "uninstallerIcon":  "src/renderer/assets/icon.ico"
                            },
                   "publish":  {
                                   "provider":  "github",
@@ -53,10 +55,11 @@
               },
     "scripts":  {
                     "build:main":  "tsc",
-                    "start":  "npm run build:main \u0026\u0026 electron .",
+                    "copy:icons":  "copyfiles -u 1 src/renderer/assets/icon.ico src/renderer/assets/icon.png src/renderer/assets/icon-16.png src/renderer/assets/icon-32.png dist",
+                    "start":  "npm run build:main \u0026\u0026 npm run copy:icons \u0026\u0026 electron .",
                     "build:renderer":  "vite build --config vite.config.ts",
-                    "dev":  "npm run build:renderer \u0026\u0026 npm run build:main \u0026\u0026 electron .",
-                    "build":  "npm run build:renderer \u0026\u0026 npm run build:main",
+                    "dev":  "npm run build:renderer \u0026\u0026 npm run build:main \u0026\u0026 npm run copy:icons \u0026\u0026 electron .",
+                    "build":  "npm run build:renderer \u0026\u0026 npm run build:main \u0026\u0026 npm run copy:icons",
                     "package":  "npm run build \u0026\u0026 electron-builder",
                     "package:win":  "npm run build \u0026\u0026 electron-builder --win",
                     "package:mac":  "npm run build \u0026\u0026 electron-builder --mac",

@@ -1,4 +1,4 @@
-# Time Keeper
+# <img src="src/renderer/assets/icon.png" alt="Time Keeper icon" width="48" height="48"> Time Keeper
 
 An always-on-top desktop HUD that shows the task you are in and how much time is left, without taking over the screen.
 

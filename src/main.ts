@@ -1,6 +1,7 @@
 console.log("Main process started")
 
 import { app, BrowserWindow, screen, ipcMain, Menu, Tray, nativeImage, MenuItemConstructorOptions, dialog } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
 import { getLocalTasks, addLocalTask, updateLocalTask, deleteLocalTask, getArchivedTasks, restoreArchivedTask, deleteArchivedTask, getTaskLists, getActiveTaskListId, setActiveTaskList, createTaskList, renameTaskList, deleteTaskList } from './main/tasks/local';
 import { sharedMenu } from './shared/menu';
@@ -333,12 +334,22 @@ class MainProcess {
     } catch (e) {
       // ignore
     }
-    const iconPath = path.join(__dirname, 'renderer/assets/icon.png');
+    // Windows window icon is the multi-size .ico (hand-tuned 16/32/48 plus 256).
+    // Other platforms use the 512px PNG; Electron there does not decode .ico.
+    const iconIco = path.join(__dirname, 'renderer/assets/icon.ico');
+    const iconPng = path.join(__dirname, 'renderer/assets/icon.png');
     let appIconPath: string | undefined = undefined;
     let iconSource = '';
-    if (fs.existsSync(iconPath)) {
-      appIconPath = iconPath;
-      iconSource = `custom icon at ${iconPath}`;
+    const icoLoads = process.platform === 'win32' && fs.existsSync(iconIco);
+    if (icoLoads) {
+      appIconPath = iconIco;
+      iconSource = `custom icon at ${iconIco}`;
+    } else if (fs.existsSync(iconPng)) {
+      appIconPath = iconPng;
+      iconSource = `custom icon at ${iconPng}`;
+    } else if (fs.existsSync(iconIco)) {
+      appIconPath = iconIco;
+      iconSource = `custom icon at ${iconIco}`;
     } else {
       // Fallback to Electron's default app icon (icon.ico or icon.png in app root)
       const appIconIco = path.join(app.getAppPath(), 'icon.ico');
@@ -387,9 +398,13 @@ class MainProcess {
           contextIsolation: false
         }
       });
-      // Set dock icon for macOS
-      if (process.platform === 'darwin' && appIconPath && app.dock) {
-        app.dock.setIcon(appIconPath);
+      // Dock wants the large PNG. The window icon above is the multi-size .ico.
+      if (process.platform === 'darwin' && app.dock) {
+        const dockPng = path.join(__dirname, 'renderer/assets/icon.png');
+        const dockIcon = fs.existsSync(dockPng) ? dockPng : appIconPath;
+        if (dockIcon) {
+          app.dock.setIcon(dockIcon);
+        }
       }
       this.mainWindow.loadFile(path.join(__dirname, 'renderer/index.html'));
       const clickThrough = hudSettings.clickThrough !== false;
@@ -450,9 +465,13 @@ class MainProcess {
         contextIsolation: false
       }
     });
-    // Set dock icon for macOS
-    if (process.platform === 'darwin' && appIconPath && app.dock) {
-      app.dock.setIcon(appIconPath);
+    // Dock wants the large PNG. The window icon above is the multi-size .ico.
+    if (process.platform === 'darwin' && app.dock) {
+      const dockPng = path.join(__dirname, 'renderer/assets/icon.png');
+      const dockIcon = fs.existsSync(dockPng) ? dockPng : appIconPath;
+      if (dockIcon) {
+        app.dock.setIcon(dockIcon);
+      }
     }
     this.managementWindow.loadFile(path.join(__dirname, 'renderer/options.html'));
     this.managementWindow.once('ready-to-show', () => {
@@ -472,30 +491,50 @@ class MainProcess {
       console.log('Tray already exists, skipping creation.');
       return;
     }
-    const fs = require('fs');
-    const iconPath = path.join(__dirname, 'renderer/assets/icon.png');
-    let trayIconPath: string | undefined = undefined;
+    // Tray uses the hand-tuned 16 and 32 frames extracted from icon.ico.
+    // Do not point this at the 512px PNG; Windows would scale that down and blur it.
+    const icon16 = path.join(__dirname, 'renderer/assets/icon-16.png');
+    const icon32 = path.join(__dirname, 'renderer/assets/icon-32.png');
+    const iconIco = path.join(__dirname, 'renderer/assets/icon.ico');
+    const iconPng = path.join(__dirname, 'renderer/assets/icon.png');
+    let trayIcon = nativeImage.createEmpty();
     let iconSource = '';
-    if (fs.existsSync(iconPath)) {
-      trayIconPath = iconPath;
-      iconSource = `custom icon at ${iconPath}`;
-    } else {
+    if (fs.existsSync(icon16)) {
+      const base = nativeImage.createFromPath(icon16);
+      if (!base.isEmpty()) {
+        if (fs.existsSync(icon32)) {
+          const hiDpiUrl = `data:image/png;base64,${fs.readFileSync(icon32).toString('base64')}`;
+          base.addRepresentation({ scaleFactor: 2, dataURL: hiDpiUrl });
+        }
+        trayIcon = base;
+        iconSource = `hand-tuned 16/32 png at ${icon16}`;
+      }
+    }
+    if (trayIcon.isEmpty() && fs.existsSync(iconIco)) {
+      trayIcon = nativeImage.createFromPath(iconIco);
+      iconSource = `custom icon at ${iconIco}`;
+    }
+    if (trayIcon.isEmpty() && fs.existsSync(iconPng)) {
+      trayIcon = nativeImage.createFromPath(iconPng);
+      iconSource = `custom icon at ${iconPng}`;
+    }
+    if (trayIcon.isEmpty()) {
       // Fallback to Electron's default app icon (icon.ico or icon.png in app root)
       const appIconIco = path.join(app.getAppPath(), 'icon.ico');
       const appIconPng = path.join(app.getAppPath(), 'icon.png');
       if (fs.existsSync(appIconIco)) {
-        trayIconPath = appIconIco;
+        trayIcon = nativeImage.createFromPath(appIconIco);
         iconSource = `fallback icon.ico at ${appIconIco}`;
       } else if (fs.existsSync(appIconPng)) {
-        trayIconPath = appIconPng;
+        trayIcon = nativeImage.createFromPath(appIconPng);
         iconSource = `fallback icon.png at ${appIconPng}`;
       } else {
         iconSource = 'no icon found, using Electron blank icon';
       }
     }
-    if (trayIconPath) {
-      this.tray = new Tray(trayIconPath);
-      console.log('Tray icon: using', iconSource);
+    if (!trayIcon.isEmpty()) {
+      this.tray = new Tray(trayIcon);
+      console.log('Tray icon: using', iconSource, trayIcon.getSize());
     } else {
       this.tray = new Tray(nativeImage.createEmpty());
       console.warn('Tray icon: no icon found, using Electron blank icon');
